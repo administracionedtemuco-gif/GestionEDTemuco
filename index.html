@@ -144,6 +144,8 @@ summary::-webkit-details-marker { display: none; }
 .aviso-picker { max-width: 900px; margin: 14px auto 0; padding: 0 20px; display: flex; gap: 6px; }
 .aviso-picker button { flex:1; padding: 10px 8px; border-radius: 8px; border: 1.5px solid #333; background: #161616; color: #888; font-size: 12px; font-weight: 700; cursor: pointer; }
 .aviso-picker button.active { background: #4488ff; color: #fff; border-color: #4488ff; }
+#avisoPickReactivacion { border-color: #ff8c00; color: #ff8c00; }
+#avisoPickReactivacion.active { background: #ff8c00; color: #0f0f0f; border-color: #ff8c00; }
 
 /* Bulk send */
 .bulk-btn-wrap { max-width: 900px; margin: 10px auto 0; padding: 0 20px; }
@@ -262,12 +264,25 @@ summary::-webkit-details-marker { display: none; }
       <textarea class="msg-tpl" id="avisoTplCustom" placeholder="Escribe aquí un mensaje libre..."></textarea>
       <p class="hint">Variables: <code>{nombre}</code></p>
     </details>
+    <details>
+      <summary>🔄 &nbsp;Reactivación — caducados hace poco (≤30 días)</summary>
+      <textarea class="msg-tpl" id="avisoTplReactivacionReciente"></textarea>
+      <p class="hint">Variables: <code>{nombre}</code></p>
+    </details>
+    <details>
+      <summary>🔄 &nbsp;Reactivación — caducados hace tiempo (+30 días)</summary>
+      <textarea class="msg-tpl" id="avisoTplReactivacionAntigua"></textarea>
+      <p class="hint">Variables: <code>{nombre}</code></p>
+    </details>
   </div>
 
   <div class="aviso-picker">
     <button class="active" id="avisoPickCierre" onclick="setAvisoTpl('Cierre')">Cierre</button>
     <button id="avisoPickInfo" onclick="setAvisoTpl('Info')">Informativo</button>
     <button id="avisoPickCustom" onclick="setAvisoTpl('Custom')">Personalizado</button>
+  </div>
+  <div class="aviso-picker" style="margin-top:6px">
+    <button id="avisoPickReactivacion" onclick="setAvisoTpl('Reactivacion')">🔄 Reactivación (automática según antigüedad)</button>
   </div>
 
   <div class="aviso-picker" id="avisoStatusPicker" style="margin-top:8px;display:none">
@@ -354,6 +369,21 @@ document.getElementById('avisoTplInfo').value =
   "Te compartimos información sobre el uso de la app Cross Hero:\n" +
   "[escribe aquí el tutorial o aviso]\n\n" +
   "Cualquier duda, escríbenos 🤝";
+
+document.getElementById('avisoTplReactivacionReciente').value =
+  "¡Hola *{nombre}*! 👋\n\n" +
+  "Notamos que tu plan en ELEMENTAL DOJO TEMUCO venció el *{fecha}* 🥋\n\n" +
+  "¡Te esperamos de vuelta en el tatami cuando quieras! Si necesitas ayuda para renovar o tienes alguna consulta, escríbenos y lo vemos juntos 🤝\n\n" +
+  "¡Nos vemos pronto! 🙏";
+
+document.getElementById('avisoTplReactivacionAntigua').value =
+  "¡Hola *{nombre}*! 👋\n\n" +
+  "Te extrañamos en el tatami del ELEMENTAL DOJO TEMUCO 🥋\n\n" +
+  "Tenemos grandes noticias: ¡nos cambiamos a un local más grande y con mejores condiciones para entrenar! 🎉\n\n" +
+  "📍 Nuestra nueva dirección: Avenida Alemania 0350, piso 3 — Boulevard Universitario\n\n" +
+  "Queremos invitarte a conocerlo y retomar tu entrenamiento cuando quieras 💪\n\n" +
+  "Si te animas, escríbenos y vemos cómo ayudarte a volver 🤝\n\n" +
+  "¡Las puertas del nuevo Dojo te esperan! 🙏";
 
 // ── State ─────────────────────────────────────────────────
 let clients = [];
@@ -659,7 +689,7 @@ function saveNota(tel) {
 // ══════════════════════ AVISOS ═════════════════════════════
 function setAvisoTpl(name) {
   avisoTplActual = name;
-  ['Cierre','Info','Custom'].forEach(n => {
+  ['Cierre','Info','Custom','Reactivacion'].forEach(n => {
     document.getElementById('avisoPick' + n).classList.toggle('active', n === name);
   });
   renderAvisos();
@@ -715,13 +745,18 @@ function getVisibleAvisosList() {
 function buildAvisoCard(c) {
   const yaEnv = avisosEnviados.has(c.tel);
   const inactivo = c.status !== 'Activo';
+  const dias = diasCaducado(c);
+  let antiguedad = '';
+  if (inactivo && dias !== null && dias > 0) {
+    antiguedad = dias <= 30 ? ` · <span style="color:#ffd700">hace ${dias}d</span>` : ` · <span style="color:#ff6666">hace ${Math.round(dias/30)} ${Math.round(dias/30)===1?'mes':'meses'}</span>`;
+  }
   return `
     <div class="card aviso${yaEnv ? ' enviado' : ''}" id="aviso-card-${c.tel}">
       <div class="card-top">
         <div class="badge aviso">${inactivo ? '⚪' : '📢'}</div>
         <div class="info">
           <div class="cname">${c.nombre}</div>
-          <div class="cplan">${c.plan}${inactivo ? ` · <span style="color:#888">${c.status}</span>` : ''}</div>
+          <div class="cplan">${c.plan}${inactivo ? ` · <span style="color:#888">${c.status}</span>${antiguedad}` : ''}</div>
         </div>
         <div class="card-actions">
           <a class="wbtn" href="${buildAvisoLink(c)}" target="_blank">
@@ -735,11 +770,24 @@ function buildAvisoCard(c) {
     </div>`;
 }
 
+function diasCaducado(c) {
+  // c.diff = (fechaVenc - hoy) en días; si venció, diff es negativo
+  if (c.diff === null) return null;
+  return c.diff < 0 ? Math.abs(c.diff) : 0;
+}
+
 function buildAvisoMsg(c) {
-  const tplId = avisoTplActual === 'Cierre' ? 'avisoTplCierre' : avisoTplActual === 'Info' ? 'avisoTplInfo' : 'avisoTplCustom';
+  let tplId;
+  if (avisoTplActual === 'Reactivacion') {
+    const dias = diasCaducado(c);
+    tplId = (dias !== null && dias <= 30) ? 'avisoTplReactivacionReciente' : 'avisoTplReactivacionAntigua';
+  } else {
+    tplId = avisoTplActual === 'Cierre' ? 'avisoTplCierre' : avisoTplActual === 'Info' ? 'avisoTplInfo' : 'avisoTplCustom';
+  }
   const tpl = document.getElementById(tplId).value;
   const nombre = c.nombre.split(' ')[0];
-  return tpl.replace(/{nombre}/g, nombre);
+  const fLabel = c.fechaVenc ? c.fechaVenc.toLocaleDateString('es-CL',{day:'2-digit',month:'long',year:'numeric'}) : '';
+  return tpl.replace(/{nombre}/g, nombre).replace(/{fecha}/g, fLabel);
 }
 
 function buildAvisoLink(c) {
